@@ -182,6 +182,19 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
     return () => clearInterval(timer);
   }, [interval]);
 
+  // 聚合所有已连接服务器的 top processes
+  const allTopProcesses = pollingServers
+    .filter(s => s.connected && s.metrics && s.metrics.topProcesses.length > 0)
+    .flatMap(s =>
+      s.metrics!.topProcesses.map(p => ({
+        ...p,
+        serverName: s.config.name,
+      }))
+    );
+
+  // 计算侧边栏宽度（固定 40 列）
+  const sidebarWidth = 40;
+
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold underline color="cyan">
@@ -193,7 +206,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       <Text bold underline color="cyan">
         └──────────────────────────────────────────────────────────────┘
       </Text>
-      <Text dimText>
+      <Text color="dim">
         {'  '}Refresh every {interval / 1000}s | Ctrl+C to exit | Tab for command
       </Text>
       
@@ -203,7 +216,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
           <Text bold color={isRefreshing ? 'yellow' : 'green'}>
             ⟳ Refresh
           </Text>
-          <Text dimText> [R]</Text>
+          <Text color="dim"> [R]</Text>
         </Box>
       </Box>
       
@@ -218,16 +231,55 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
         </Box>
       )}
       
-      <Box flexDirection="column" marginTop={1}>
-        {pollingServers.map((server, index) => (
-          <ServerCard
-            key={server.config.name}
-            server={server}
-            formatBytes={formatBytes}
-            formatUptime={formatUptime}
-            loadAverageColor={loadAverageColor}
-          />
-        ))}
+      {/* 主内容区：左侧服务器卡片 + 右侧 Top Processes 侧边栏 */}
+      <Box flexDirection="row" marginTop={1}>
+        {/* 左侧：服务器卡片 */}
+        <Box flexDirection="column" flexWrap="wrap" flexGrow={1}>
+          {pollingServers.map((server, index) => (
+            <ServerCard
+              key={server.config.name}
+              server={server}
+              formatBytes={formatBytes}
+              formatUptime={formatUptime}
+              loadAverageColor={loadAverageColor}
+            />
+          ))}
+        </Box>
+        
+        {/* 右侧：Top Processes 侧边栏 */}
+        <Box flexDirection="column" width={sidebarWidth} borderStyle="single" borderColor="cyan" paddingX={1}>
+          <Text bold color="cyan">  Top Processes</Text>
+          {allTopProcesses.length === 0 ? (
+            <Box>
+              <Text color="dim">  No processes data</Text>
+            </Box>
+          ) : (
+            <Box flexDirection="column">
+              {allTopProcesses.slice(0, 20).map((p, i) => {
+                const cpuColor = p.cpu > 50 ? 'red' : p.cpu > 20 ? 'yellow' : 'green';
+                const memColor = p.memPercent > 20 ? 'red' : p.memPercent > 10 ? 'yellow' : 'green';
+                const cmd = p.command.length > 35 ? p.command.slice(0, 32) + '...' : p.command;
+                return (
+                  <Box key={i} flexDirection="column">
+                    <Box>
+                      <Text color="cyan">  </Text>
+                      <Text bold>{p.serverName} </Text>
+                      <Text color="dim">#{i + 1} PID:{p.pid} </Text>
+                    </Box>
+                    <Box>
+                      <Text color={cpuColor}>CPU:{p.cpu.toFixed(1)}% </Text>
+                      <Text color={memColor}>MEM:{p.memPercent.toFixed(1)}%</Text>
+                    </Box>
+                    <Box>
+                      <Text color="dim">  </Text>
+                      <Text>{cmd}</Text>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </Box>
       </Box>
       
       {/* 命令输入行 */}
@@ -236,21 +288,15 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
           <Text color="green" bold>
             {'  › '}
           </Text>
-          {showInput ? (
-          <TextInput
-               value={command}
-               onChange={setCommand}
-               onSubmit={handleCommand}
-               onKeyDown={(key) => {
-                 if (key.escape) {
-                   setShowInput(false);
-                   setCommand('');
-                 }
-               }}
-               placeholder="Type help for commands..."
-             />
+         {showInput ? (
+            <TextInput
+              value={command}
+              onChange={setCommand}
+              onSubmit={handleCommand}
+              placeholder="Type help for commands..."
+            />
           ) : (
-            <Text dimText>
+            <Text color="dim">
               Press Tab to enter command
             </Text>
           )}
