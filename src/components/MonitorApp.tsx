@@ -56,6 +56,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
   const [showInput, setShowInput] = useState(false);
   const [messages, setMessages] = useState<{ type: 'info' | 'error' | 'success'; text: string }[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [processFilter, setProcessFilter] = useState('');
 
   // 手动刷新所有服务器
   const handleRefresh = async () => {
@@ -182,7 +183,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
     return () => clearInterval(timer);
   }, [interval]);
 
-  // 聚合所有已连接服务器的 top processes
+ // 聚合所有已连接服务器的 top processes
   const allTopProcesses = pollingServers
     .filter(s => s.connected && s.metrics && s.metrics.topProcesses.length > 0)
     .flatMap(s =>
@@ -192,26 +193,28 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       }))
     );
 
-  // 计算侧边栏宽度（固定 40 列）
-  const sidebarWidth = 40;
+  // 按过滤词筛选进程
+  const filteredProcesses = processFilter
+    ? allTopProcesses.filter(p =>
+        p.command.toLowerCase().includes(processFilter.toLowerCase()) ||
+        p.serverName.toLowerCase().includes(processFilter.toLowerCase())
+      )
+    : allTopProcesses;
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold underline color="cyan">
-        ┌──────────────────────────────────────────────────────────────┐
-      </Text>
-      <Text bold color="cyan">
-        {'  '}🖥️  Server Performance Monitor
-      </Text>
-      <Text bold underline color="cyan">
-        └──────────────────────────────────────────────────────────────┘
-      </Text>
-      <Text color="dim">
-        {'  '}Refresh every {interval / 1000}s | Ctrl+C to exit | Tab for command
-      </Text>
-      
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} paddingY={1}>
+      {/* 标题栏 */}
+      <Box>
+        <Text bold color="cyan">🖥️  Server Performance Monitor</Text>
+      </Box>
+      <Box>
+        <Text color="dim">
+          Refresh every {interval / 1000}s | Tab for command | Esc to clear filter
+        </Text>
+      </Box>
+
       {/* 刷新按钮 */}
-      <Box marginTop={1} paddingX={1}>
+      <Box marginTop={1}>
         <Box borderStyle="single" borderColor={isRefreshing ? 'yellow' : 'green'} paddingX={1}>
           <Text bold color={isRefreshing ? 'yellow' : 'green'}>
             ⟳ Refresh
@@ -219,23 +222,23 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
           <Text color="dim"> [R]</Text>
         </Box>
       </Box>
-      
-      {/* 显示消息 */}
+
+      {/* 消息 */}
       {messages.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {messages.map((msg, i) => (
             <Text key={i} color={msg.type === 'error' ? 'red' : msg.type === 'success' ? 'green' : 'white'}>
-              {'  '}{msg.type === 'info' ? 'ℹ' : msg.type === 'error' ? '✖' : '✔'} {msg.text}
+              {msg.type === 'info' ? 'ℹ' : msg.type === 'error' ? '✖' : '✔'} {msg.text}
             </Text>
           ))}
         </Box>
       )}
-      
-      {/* 主内容区：左侧服务器卡片 + 右侧 Top Processes 侧边栏 */}
+
+      {/* 主内容：左侧服务器卡片 + 右侧 Top Processes */}
       <Box flexDirection="row" marginTop={1}>
         {/* 左侧：服务器卡片 */}
         <Box flexDirection="column" flexWrap="wrap" flexGrow={1}>
-          {pollingServers.map((server, index) => (
+          {pollingServers.map((server) => (
             <ServerCard
               key={server.config.name}
               server={server}
@@ -245,17 +248,30 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
             />
           ))}
         </Box>
-        
+
         {/* 右侧：Top Processes 侧边栏 */}
-        <Box flexDirection="column" width={sidebarWidth} borderStyle="single" borderColor="cyan" paddingX={1}>
+        <Box flexDirection="column" width={40} borderStyle="single" borderColor="cyan" paddingX={1}>
           <Text bold color="cyan">  Top Processes</Text>
-          {allTopProcesses.length === 0 ? (
-            <Box>
-              <Text color="dim">  No processes data</Text>
+
+          {/* 过滤输入框 */}
+          <Box marginTop={1}>
+            <Text color="cyan">  filter: </Text>
+            <TextInput
+              value={processFilter}
+              onChange={setProcessFilter}
+              placeholder="process name..."
+            />
+          </Box>
+
+          {filteredProcesses.length === 0 ? (
+            <Box marginTop={1}>
+              <Text color="dim">
+                {processFilter ? '  No matching processes' : '  No processes data'}
+              </Text>
             </Box>
           ) : (
-            <Box flexDirection="column">
-              {allTopProcesses.slice(0, 20).map((p, i) => {
+            <Box flexDirection="column" marginTop={1}>
+              {filteredProcesses.slice(0, 20).map((p, i) => {
                 const cpuColor = p.cpu > 50 ? 'red' : p.cpu > 20 ? 'yellow' : 'green';
                 const memColor = p.memPercent > 20 ? 'red' : p.memPercent > 10 ? 'yellow' : 'green';
                 const cmd = p.command.length > 35 ? p.command.slice(0, 32) + '...' : p.command;
@@ -264,7 +280,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
                     <Box>
                       <Text color="cyan">  </Text>
                       <Text bold>{p.serverName} </Text>
-                      <Text color="dim">#{i + 1} PID:{p.pid} </Text>
+                      <Text color="dim">PID:{p.pid} </Text>
                     </Box>
                     <Box>
                       <Text color={cpuColor}>CPU:{p.cpu.toFixed(1)}% </Text>
@@ -281,15 +297,15 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
           )}
         </Box>
       </Box>
-      
+
       {/* 命令输入行 */}
       <Box flexDirection="column" marginTop={1}>
         <Box>
           <Text color="green" bold>
             {'  › '}
           </Text>
-         {showInput ? (
-            <TextInput
+          {showInput ? (
+             <TextInput
               value={command}
               onChange={setCommand}
               onSubmit={handleCommand}
