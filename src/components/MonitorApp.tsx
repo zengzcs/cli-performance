@@ -3,6 +3,7 @@ import { Box, Text, Static } from 'ink';
 import { ServerConfig, ServerMetrics } from '../types';
 import { getMetrics } from '../lib/ssh';
 import { ServerCard } from './ServerCard';
+import TextInput from 'ink-text-input';
 
 interface PollingServer {
   config: ServerConfig;
@@ -51,6 +52,55 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       lastUpdate: null,
     }))
   );
+  const [command, setCommand] = useState('');
+  const [showInput, setShowInput] = useState(false);
+  const [messages, setMessages] = useState<{ type: 'info' | 'error' | 'success'; text: string }[]>([]);
+
+  // Tab 键切换输入模式
+  useEffect(() => {
+    const handler = (data: Buffer) => {
+      const input = data.toString();
+      if (input === '\t') {
+        setShowInput((prev) => !prev);
+        if (!showInput) {
+          setCommand('');
+        }
+      }
+    };
+    process.stdin.resume();
+    process.stdin.setRawMode(true);
+    process.stdin.addListener('data', handler);
+    return () => {
+      process.stdin.removeListener('data', handler);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+  }, [showInput]);
+
+  const addMessage = (type: 'info' | 'error' | 'success', text: string) => {
+    setMessages((prev) => [...prev, { type, text }]);
+    // 3秒后自动清除消息
+    setTimeout(() => {
+      setMessages((prev) => prev.filter((m) => m.text !== text));
+    }, 3000);
+  };
+
+  const handleCommand = (cmd: string) => {
+    const trimmed = cmd.trim().toLowerCase();
+    
+    if (trimmed === 'help' || trimmed === '--help' || trimmed === '/help') {
+      addMessage('info', 'Commands: help, add, clear');
+    } else if (trimmed === 'add' || trimmed === '--add') {
+      addMessage('info', 'Run "bun start --add" to add a server');
+    } else if (trimmed === 'clear') {
+      setMessages([]);
+    } else if (trimmed) {
+      addMessage('error', `Unknown command: ${cmd}. Type "help" for available commands.`);
+    }
+    
+    setCommand('');
+    setShowInput(false);
+  };
 
   const pollServer = async (index: number, config: ServerConfig) => {
     try {
@@ -95,8 +145,20 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
         └──────────────────────────────────────────────────────────────┘
       </Text>
       <Text dimText>
-        {'  '}Refresh every {interval / 1000}s | Ctrl+C to exit
+        {'  '}Refresh every {interval / 1000}s | Ctrl+C to exit | Tab for command
       </Text>
+      
+      {/* 显示消息 */}
+      {messages.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {messages.map((msg, i) => (
+            <Text key={i} color={msg.type === 'error' ? 'red' : msg.type === 'success' ? 'green' : 'white'}>
+              {'  '}{msg.type === 'info' ? 'ℹ' : msg.type === 'error' ? '✖' : '✔'} {msg.text}
+            </Text>
+          ))}
+        </Box>
+      )}
+      
       <Box flexDirection="column" marginTop={1}>
         {pollingServers.map((server, index) => (
           <ServerCard
@@ -107,6 +169,32 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
             loadAverageColor={loadAverageColor}
           />
         ))}
+      </Box>
+      
+      {/* 命令输入行 */}
+      <Box flexDirection="column" marginTop={1}>
+        <Box>
+          <Text color="green" bold>
+            {'  › '}
+          </Text>
+          {showInput ? (
+            <TextInput
+              value={command}
+              onSubmit={handleCommand}
+              onKeyDown={(key) => {
+                if (key.escape) {
+                  setShowInput(false);
+                  setCommand('');
+                }
+              }}
+              placeholder="Type help for commands..."
+            />
+          ) : (
+            <Text dimText>
+              Press Tab to enter command
+            </Text>
+          )}
+        </Box>
       </Box>
     </Box>
   );
