@@ -3,8 +3,10 @@ export interface ServerConfig {
   host: string;
   port: number;
   user: string;
-  password?: string;
+  /** SSH 公钥路径，默认 ~/.ssh/id_rsa（免密登录） */
   keyPath?: string;
+  /** SSH 密码（可选，默认使用公钥认证） */
+  password?: string;
 }
 
 export interface ServerMetrics {

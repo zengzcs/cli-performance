@@ -4,9 +4,14 @@
       "name": "Production Server",
       "host": "192.168.1.100",
       "port": 22,
-      "user": "root",
-      "password": "your-password",
-      "keyPath": "~/.ssh/id_rsa"
+      "user": "root"
+    },
+    {
+      "name": "Staging Server",
+      "host": "192.168.1.101",
+      "port": 22,
+      "user": "deploy",
+      "keyPath": "~/.ssh/staging_id_ed25519"
     }
   ]
 }

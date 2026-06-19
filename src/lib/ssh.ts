@@ -1,6 +1,7 @@
 import { ServerConfig, ServerMetrics } from '../types';
 import { Client } from 'ssh2';
 import { promisify } from 'util';
+import * as fs from 'fs';
 
 interface ExecResult {
   stdout: string;
@@ -61,11 +62,25 @@ export async function getMetrics(config: ServerConfig): Promise<ServerMetrics> {
       readyTimeout: 10000,
     };
 
-    if (config.password) {
-      connOpts.password = config.password;
-    }
+    // 默认使用 SSH 公钥认证（免密登录）
+    // 如果配置了 keyPath，优先使用私钥认证
+    // 如果没有 keyPath 但有 password，使用密码认证
+    // 如果都没有，尝试使用系统默认 SSH 密钥（~/.ssh/id_rsa 等）
     if (config.keyPath) {
       connOpts.privateKey = config.keyPath.replace('~', process.env.HOME || '');
+    } else if (!config.password) {
+      // 未配置 keyPath 且未配置 password，尝试使用默认 SSH 密钥
+      const defaultKeys = ['~/.ssh/id_rsa', '~/.ssh/id_ed25519', '~/.ssh/id_ecdsa', '~/.ssh/rsa'];
+      for (const key of defaultKeys) {
+        const keyPath = key.replace('~', process.env.HOME || '');
+        if (fs.existsSync(keyPath)) {
+          connOpts.privateKey = keyPath;
+          break;
+        }
+      }
+    }
+    if (config.password) {
+      connOpts.password = config.password;
     }
 
     conn.on('ready', async () => {
