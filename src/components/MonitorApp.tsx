@@ -93,11 +93,11 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
         const isLeftClick = buttons === 0 || buttons === 1; // 左键按下/释放
         
         if (isRelease && isLeftClick) {
-          // 刷新按钮区域: 第 6 行 (0-indexed: 5)，列 2-18
-          // "⟳ Refresh [R]" 的位置
+          // 刷新按钮区域: 第 6 行 (0-indexed: 5)，列 3-19（带边框 padding）
+          // "⟳ Refresh [R]" 的位置在边框内
           const buttonY = 5;
-          const buttonX = 2;
-          const buttonWidth = 18;
+          const buttonX = 3;
+          const buttonWidth = 17;
           
           if (y === buttonY && x >= buttonX && x < buttonX + buttonWidth) {
             handleRefresh();
@@ -113,11 +113,15 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
     };
     
     process.stdin.resume();
-    process.stdin.setRawMode(true);
+    if (typeof process.stdin.setRawMode === 'function') {
+      process.stdin.setRawMode(true);
+    }
     process.stdin.addListener('data', handler);
     return () => {
       process.stdin.removeListener('data', handler);
-      process.stdin.setRawMode(false);
+      if (typeof process.stdin.setRawMode === 'function') {
+        process.stdin.setRawMode(false);
+      }
       process.stdin.pause();
     };
   }, [showInput, isRefreshing, pollingServers]);
@@ -194,11 +198,13 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       </Text>
       
       {/* 刷新按钮 */}
-      <Box marginTop={1}>
-        <Text bold color={isRefreshing ? 'yellow' : 'green'}>
-          {'  ⟳ Refresh '}
-          <Text dimText>[R]</Text>
-        </Text>
+      <Box marginTop={1} paddingX={1}>
+        <Box borderStyle="single" borderColor={isRefreshing ? 'yellow' : 'green'} paddingX={1}>
+          <Text bold color={isRefreshing ? 'yellow' : 'green'}>
+            ⟳ Refresh
+          </Text>
+          <Text dimText> [R]</Text>
+        </Box>
       </Box>
       
       {/* 显示消息 */}
