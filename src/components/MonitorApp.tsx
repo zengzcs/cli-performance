@@ -55,18 +55,63 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
   const [command, setCommand] = useState('');
   const [showInput, setShowInput] = useState(false);
   const [messages, setMessages] = useState<{ type: 'info' | 'error' | 'success'; text: string }[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Tab 键切换输入模式
+  // 手动刷新所有服务器
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    addMessage('info', 'Refreshing...');
+    for (let i = 0; i < pollingServers.length; i++) {
+      await pollServer(i, pollingServers[i].config);
+    }
+    setIsRefreshing(false);
+  };
+
+  // 捕获鼠标点击和键盘事件
   useEffect(() => {
     const handler = (data: Buffer) => {
       const input = data.toString();
-      if (input === '\t') {
-        setShowInput((prev) => !prev);
-        if (!showInput) {
-          setCommand('');
+      
+      // Tab 键切换输入模式
+      if (input === '\t' && !showInput) {
+        setShowInput(true);
+        setCommand('');
+        return;
+      }
+      
+      // 捕获 ANSI 鼠标点击事件 (SGR 模式)
+      // 格式: \x1b[<buttons>;<x>;<y>M (鼠标按下) 或 \x1b[<buttons>;<x>;<y>m (鼠标释放)
+      const mouseMatch = input.match(/\x1b\[([0-9]+);([0-9]+);([0-9]+)[Mm]/);
+      if (mouseMatch) {
+        const buttons = parseInt(mouseMatch[1]);
+        const x = parseInt(mouseMatch[2]) - 1; // 1-indexed
+        const y = parseInt(mouseMatch[3]) - 1; // 1-indexed
+        
+        // 只有鼠标释放事件 (button 0, 1, 2, 3) 且非移动/滚动
+        const isRelease = input.endsWith('m');
+        const isLeftClick = buttons === 0 || buttons === 1; // 左键按下/释放
+        
+        if (isRelease && isLeftClick) {
+          // 刷新按钮区域: 第 6 行 (0-indexed: 5)，列 2-18
+          // "⟳ Refresh [R]" 的位置
+          const buttonY = 5;
+          const buttonX = 2;
+          const buttonWidth = 18;
+          
+          if (y === buttonY && x >= buttonX && x < buttonX + buttonWidth) {
+            handleRefresh();
+          }
         }
+        return;
+      }
+      
+      // 键盘 'r' 键刷新 (不在输入模式下)
+      if (input === 'r' && !showInput) {
+        handleRefresh();
       }
     };
+    
     process.stdin.resume();
     process.stdin.setRawMode(true);
     process.stdin.addListener('data', handler);
@@ -75,7 +120,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
     };
-  }, [showInput]);
+  }, [showInput, isRefreshing, pollingServers]);
 
   const addMessage = (type: 'info' | 'error' | 'success', text: string) => {
     setMessages((prev) => [...prev, { type, text }]);
@@ -147,6 +192,14 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       <Text dimText>
         {'  '}Refresh every {interval / 1000}s | Ctrl+C to exit | Tab for command
       </Text>
+      
+      {/* 刷新按钮 */}
+      <Box marginTop={1}>
+        <Text bold color={isRefreshing ? 'yellow' : 'green'}>
+          {'  ⟳ Refresh '}
+          <Text dimText>[R]</Text>
+        </Text>
+      </Box>
       
       {/* 显示消息 */}
       {messages.length > 0 && (
