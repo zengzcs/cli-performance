@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { App } from 'ink';
+import { render } from 'ink';
 import React from 'react';
 import { loadServers } from './lib/config';
 import { MonitorApp } from './components/MonitorApp';
@@ -16,14 +16,8 @@ async function main() {
   console.log(`Monitoring ${servers.length} server(s)`);
   console.log('Press Ctrl+C to exit\n');
 
-  // Render with Ink
-  const app = (
-    <App exitOnExit={true}>
-      <MonitorApp servers={servers} interval={5000} />
-    </App>
-  );
-
-  app.render();
+  // Render with Ink v5 (uses render() instead of App component)
+  render(<MonitorApp servers={servers} interval={5000} />);
 }
 
 main();

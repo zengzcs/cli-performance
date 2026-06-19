@@ -12,7 +12,7 @@ export default defineConfig({
       fileName: () => 'cli.js',
     },
     rollupOptions: {
-      external: ['react', 'react/jsx-runtime', 'ink', 'ink-print-cluster', 'ssh2', 'os'],
+      external: ['react', 'react/jsx-runtime', 'ink', 'ink-print-cluster', 'ssh2', 'os', 'fs', 'path'],
     },
   },
   define: {
