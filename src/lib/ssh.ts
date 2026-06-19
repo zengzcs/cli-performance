@@ -1,4 +1,4 @@
-import { ServerConfig, ServerMetrics } from '../types';
+import { ServerConfig, ServerMetrics, NetInterfaceStats, NetConnectionCount, TopProcess, DiskEntry } from '../types';
 import { Client } from 'ssh2';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -24,8 +24,8 @@ function execSSH(
       let stderr = '';
       let code: number | null = null;
 
-      stream.on('close', (code) => {
-        resolve({ stdout, stderr, code });
+      stream.on('close', (code: number | undefined) => {
+        resolve({ stdout, stderr, code: code ?? null });
       }).on('data', (data: Buffer) => {
         stdout += data.toString();
       }).stderr.on('data', (data: Buffer) => {
@@ -105,11 +105,14 @@ export async function getMetrics(config: ServerConfig): Promise<ServerMetrics> {
           execSSH(conn, 'uptime'),
           execSSH(conn, "free -b | awk '/Mem:/{printf \"%.0f %.0f %.0f\", $2, $3, $3/$2*100}'"),
           execSSH(conn, "free -b | awk '/Swap:/{printf \"%.0f %.0f %.0f\", $2, $3, $4}'"),
-          execSSH(conn, "df -BM --output=size,used,avail,pcent / 2>/dev/null | tail -1"),
+          execSSH(conn, "df -BM --output=size,used,avail,pcent,mounted 2>/dev/null | tail -n +2"),
           execSSH(conn, 'cat /proc/uptime | awk \'{printf "%.0f", $1}\''),
+          execSSH(conn, 'cat /proc/net/dev 2>/dev/null'),
+          execSSH(conn, 'ss -s 2>/dev/null || netstat -s 2>/dev/null | head -20'),
+          execSSH(conn, 'ps aux --sort=-%cpu 2>/dev/null | head -11'),
         ]);
 
-        const [cpuLine, nproc, uptimeOut, memInfo, swapInfo, diskInfo, procUptime] = results;
+        const [cpuLine, nproc, uptimeOut, memInfo, swapInfo, diskInfo, procUptime, netDev, ssOut, psOut] = results;
 
         // Parse CPU usage
         let cpuUsage = 0;
@@ -142,15 +145,110 @@ export async function getMetrics(config: ServerConfig): Promise<ServerMetrics> {
         const swapUsed = parseInt(swapParts[1], 10) || 0;
         const swapFree = parseInt(swapParts[2], 10) || 0;
 
-        // Parse disk
-        const diskParts = diskInfo.stdout.trim().split(/\s+/);
-        const diskTotal = parseInt(diskParts[0], 10) || 0;
-        const diskUsed = parseInt(diskParts[1], 10) || 0;
-        const diskFree = parseInt(diskParts[2], 10) || 0;
-        const diskUsage = diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0;
+        // Parse all disk mounts
+        const diskAll: DiskEntry[] = [];
+        const diskLines = diskInfo.stdout.trim().split('\n').filter(l => l.trim());
+        for (const line of diskLines) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length >= 5) {
+            const total = parseInt(parts[0], 10) || 0;
+            const used = parseInt(parts[1], 10) || 0;
+            const free = parseInt(parts[2], 10) || 0;
+            const usage = total > 0 ? (used / total) * 100 : 0;
+            const mount = parts[4] || '/';
+            const fs = parts[0]; // filesystem name
+            diskAll.push({
+              total: total * 1024 * 1024, // convert from MB to bytes
+              used: used * 1024 * 1024,
+              free: free * 1024 * 1024,
+              usage: Math.max(0, Math.min(100, usage)),
+              mountPoint: mount,
+              filesystem: fs,
+            });
+          }
+        }
+
+        // Root disk for legacy display
+        const rootDisk = diskAll.find(d => d.mountPoint === '/') || diskAll[0] || null;
+        const disk = rootDisk ? [{
+          total: rootDisk.total,
+          used: rootDisk.used,
+          free: rootDisk.free,
+          usage: rootDisk.usage,
+        }] : [];
 
         // Parse uptime
         const uptime = parseInt(procUptime.stdout.trim(), 10) || 0;
+
+        // Parse network interfaces from /proc/net/dev
+        const netInterfaces: NetInterfaceStats[] = [];
+        const netDevLines = netDev.stdout.trim().split('\n').filter(l => l.includes(':'));
+        for (const line of netDevLines) {
+          const parts = line.split(':');
+          if (parts.length >= 2) {
+            const name = parts[0].trim();
+            // Skip loopback for clarity
+            if (name === 'lo' || name.startsWith('lo:')) continue;
+            const values = parts[1].trim().split(/\s+/);
+            if (values.length >= 16) {
+              netInterfaces.push({
+                name,
+                rxBytes: parseInt(values[1], 10) || 0,
+                txBytes: parseInt(values[9], 10) || 0,
+                rxPackets: parseInt(values[2], 10) || 0,
+                txPackets: parseInt(values[10], 10) || 0,
+                rxErrors: parseInt(values[3], 10) || 0,
+                txErrors: parseInt(values[11], 10) || 0,
+              });
+            }
+          }
+        }
+
+        // Compute total network bytes
+        const totalRx = netInterfaces.reduce((sum, n) => sum + n.rxBytes, 0);
+        const totalTx = netInterfaces.reduce((sum, n) => sum + n.txBytes, 0);
+
+        // Parse network connection states from ss -s
+        let connStats: NetConnectionCount = {
+          established: 0,
+          listen: 0,
+          timeWait: 0,
+          closeWait: 0,
+          total: 0,
+        };
+        const ssLines = ssOut.stdout.trim().split('\n');
+        for (const line of ssLines) {
+          const estMatch = line.match(/(\d+)\s+established/);
+          if (estMatch) connStats.established = parseInt(estMatch[1], 10) || 0;
+          const twMatch = line.match(/(\d+)\s+time.wait/);
+          if (twMatch) connStats.timeWait = parseInt(twMatch[1], 10) || 0;
+          const cwMatch = line.match(/(\d+)\s+close.wait/);
+          if (cwMatch) connStats.closeWait = parseInt(cwMatch[1], 10) || 0;
+          const listenMatch = line.match(/(\d+)\s+listen/);
+          if (listenMatch) connStats.listen = parseInt(listenMatch[1], 10) || 0;
+          const totalMatch = line.match(/(\d+)\s+total/);
+          if (totalMatch) connStats.total = parseInt(totalMatch[1], 10) || 0;
+        }
+
+        // Parse top processes
+        const topProcesses: TopProcess[] = [];
+        const psLines = psOut.stdout.trim().split('\n');
+        // First line is header, skip it; remaining lines are processes
+        for (let i = 1; i < psLines.length; i++) {
+          const line = psLines[i].trim();
+          if (!line) continue;
+          const parts = line.split(/\s+/);
+          // ps aux format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND...
+          if (parts.length >= 11) {
+            const pid = parseInt(parts[1], 10);
+            const cpu = parseFloat(parts[2]) || 0;
+            const memPercent = parseFloat(parts[3]) || 0;
+            const command = parts.slice(10).join(' ');
+            if (!isNaN(pid)) {
+              topProcesses.push({ pid, cpu, memPercent, command });
+            }
+          }
+        }
 
         resolve({
           timestamp: Date.now(),
@@ -170,18 +268,15 @@ export async function getMetrics(config: ServerConfig): Promise<ServerMetrics> {
             swapUsed,
             swapFree,
           },
-          disk: [
-            {
-              total: diskTotal,
-              used: diskUsed,
-              free: diskFree,
-              usage: Math.max(0, Math.min(100, diskUsage)),
-            },
-          ],
+          disk,
           network: {
-            rxBytes: 0,
-            txBytes: 0,
+            rxBytes: totalRx,
+            txBytes: totalTx,
           },
+          netInterfaces,
+          netConnections: connStats,
+          topProcesses,
+          diskAll,
           uptime,
         });
       } catch (err: any) {

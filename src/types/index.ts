@@ -9,6 +9,40 @@ export interface ServerConfig {
   password?: string;
 }
 
+export interface NetInterfaceStats {
+  name: string;
+  rxBytes: number;
+  txBytes: number;
+  rxPackets: number;
+  txPackets: number;
+  rxErrors: number;
+  txErrors: number;
+}
+
+export interface NetConnectionCount {
+  established: number;
+  listen: number;
+  timeWait: number;
+  closeWait: number;
+  total: number;
+}
+
+export interface TopProcess {
+  pid: number;
+  cpu: number;
+  memPercent: number;
+  command: string;
+}
+
+export interface DiskEntry {
+  mountPoint: string;
+  filesystem: string;
+  total: number;
+  used: number;
+  free: number;
+  usage: number;
+}
+
 export interface ServerMetrics {
   timestamp: number;
   cpu: {
@@ -37,6 +71,10 @@ export interface ServerMetrics {
     rxBytes: number;
     txBytes: number;
   };
+  netInterfaces: NetInterfaceStats[];
+  netConnections: NetConnectionCount;
+  topProcesses: TopProcess[];
+  diskAll: DiskEntry[];
   uptime: number;
 }
 
