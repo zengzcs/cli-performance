@@ -178,17 +178,18 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
             {'  › '}
           </Text>
           {showInput ? (
-            <TextInput
-              value={command}
-              onSubmit={handleCommand}
-              onKeyDown={(key) => {
-                if (key.escape) {
-                  setShowInput(false);
-                  setCommand('');
-                }
-              }}
-              placeholder="Type help for commands..."
-            />
+          <TextInput
+               value={command}
+               onChange={setCommand}
+               onSubmit={handleCommand}
+               onKeyDown={(key) => {
+                 if (key.escape) {
+                   setShowInput(false);
+                   setCommand('');
+                 }
+               }}
+               placeholder="Type help for commands..."
+             />
           ) : (
             <Text dimText>
               Press Tab to enter command
