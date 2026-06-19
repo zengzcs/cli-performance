@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, Static } from 'ink';
+import React, { useState, useEffect, useRef } from 'react';
+ import { Box, Text } from 'ink';
 import { ServerConfig, ServerMetrics } from '../types';
 import { getMetrics } from '../lib/ssh';
 import { ServerCard } from './ServerCard';
@@ -57,6 +57,9 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
   const [messages, setMessages] = useState<{ type: 'info' | 'error' | 'success'; text: string }[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [processFilter, setProcessFilter] = useState('');
+  const [focusedInput, setFocusedInput] = useState<'none' | 'filter' | 'command'>('none');
+  const focusedInputRef = useRef(focusedInput);
+  focusedInputRef.current = focusedInput;
 
   // 手动刷新所有服务器
   const handleRefresh = async () => {
@@ -74,9 +77,28 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
     const handler = (data: Buffer) => {
       const input = data.toString();
       
-      // Tab 键切换输入模式
-      if (input === '\t' && !showInput) {
-        setShowInput(true);
+      // Ctrl+P: focus process filter
+      if (input === '\x10' && focusedInputRef.current !== 'filter') {
+        setFocusedInput('filter');
+        return;
+      }
+      
+      // Ctrl+M: focus command input
+      if (input === '\x0d' && focusedInputRef.current !== 'command') {
+        setFocusedInput('command');
+        setCommand('');
+        return;
+      }
+      
+      // Esc: blur focused input
+      if (input === '\x1b' && focusedInputRef.current !== 'none') {
+        setFocusedInput('none');
+        return;
+      }
+      
+      // Tab 键切换输入模式（兼容旧用法，直接跳到 command）
+      if (input === '\t' && focusedInputRef.current === 'none') {
+        setFocusedInput('command');
         setCommand('');
         return;
       }
@@ -108,7 +130,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       }
       
       // 键盘 'r' 键刷新 (不在输入模式下)
-      if (input === 'r' && !showInput) {
+      if (input === 'r' && focusedInputRef.current === 'none') {
         handleRefresh();
       }
     };
@@ -125,7 +147,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       }
       process.stdin.pause();
     };
-  }, [showInput, isRefreshing, pollingServers]);
+  }, [isRefreshing, pollingServers]);
 
   const addMessage = (type: 'info' | 'error' | 'success', text: string) => {
     setMessages((prev) => [...prev, { type, text }]);
@@ -209,7 +231,7 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
       </Box>
       <Box>
         <Text color="dim">
-          Refresh every {interval / 1000}s | Tab for command | Esc to clear filter
+          Refresh every {interval / 1000}s | Ctrl+P filter | Ctrl+M command | Esc clear | R refresh
         </Text>
       </Box>
 
@@ -255,12 +277,23 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
 
           {/* 过滤输入框 */}
           <Box marginTop={1}>
-            <Text color="cyan">  filter: </Text>
-            <TextInput
-              value={processFilter}
-              onChange={setProcessFilter}
-              placeholder="process name..."
-            />
+            <Box borderStyle="single" borderColor={focusedInput === 'filter' ? 'yellow' : 'cyan'} paddingX={1}>
+              <Box flexDirection="row">
+                <Text color="cyan">  filter: </Text>
+                {focusedInput === 'filter' ? (
+                  <TextInput
+                    value={processFilter}
+                    onChange={setProcessFilter}
+                    placeholder="process name..."
+                  />
+                ) : (
+                  <Text color="dim">{processFilter || '(none)'} </Text>
+                )}
+              </Box>
+              <Box justifyContent="flex-end">
+                <Text color="dim">[Ctrl+P]</Text>
+              </Box>
+            </Box>
           </Box>
 
           {filteredProcesses.length === 0 ? (
@@ -298,24 +331,29 @@ export function MonitorApp({ servers, interval = 5000 }: MonitorAppProps) {
         </Box>
       </Box>
 
-      {/* 命令输入行 */}
+       {/* 命令输入行 */}
       <Box flexDirection="column" marginTop={1}>
-        <Box>
-          <Text color="green" bold>
-            {'  › '}
-          </Text>
-          {showInput ? (
-             <TextInput
-              value={command}
-              onChange={setCommand}
-              onSubmit={handleCommand}
-              placeholder="Type help for commands..."
-            />
-          ) : (
-            <Text color="dim">
-              Press Tab to enter command
+        <Box borderStyle="single" borderColor={focusedInput === 'command' ? 'yellow' : 'green'} paddingX={1}>
+          <Box flexDirection="row">
+            <Text color="green" bold>
+              {'  › '}
             </Text>
-          )}
+            {focusedInput === 'command' ? (
+              <TextInput
+                value={command}
+                onChange={setCommand}
+                onSubmit={handleCommand}
+                placeholder="Type help for commands..."
+              />
+            ) : (
+              <Text color="dim">
+                {command || 'Press Tab or Ctrl+M for command'}
+              </Text>
+            )}
+          </Box>
+          <Box justifyContent="flex-end">
+            <Text color="dim">[Ctrl+M]</Text>
+          </Box>
         </Box>
       </Box>
     </Box>
