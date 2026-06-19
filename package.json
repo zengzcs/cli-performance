@@ -1,0 +1,41 @@
+{
+  "name": "cli-performance",
+  "version": "0.1.0",
+  "description": "A CLI tool to monitor remote server performance using React + Ink + Bun",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "cli-performance": "dist/cli.js"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "cli",
+    "monitor",
+    "server",
+    "performance",
+    "ssh"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "ink": "^5.0.1",
+    "react": "^18.3.1",
+    "ssh2": "^1.15.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/ssh2": "^1.15.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
