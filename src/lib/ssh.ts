@@ -66,15 +66,28 @@ export async function getMetrics(config: ServerConfig): Promise<ServerMetrics> {
     // 如果配置了 keyPath，优先使用私钥认证
     // 如果没有 keyPath 但有 password，使用密码认证
     // 如果都没有，尝试使用系统默认 SSH 密钥（~/.ssh/id_rsa 等）
+    const loadPrivateKey = (keyPath: string): string | null => {
+      const resolvedPath = keyPath.replace('~', process.env.HOME || '');
+      if (!fs.existsSync(resolvedPath)) return null;
+      try {
+        return fs.readFileSync(resolvedPath, 'utf8');
+      } catch {
+        return null;
+      }
+    };
+
     if (config.keyPath) {
-      connOpts.privateKey = config.keyPath.replace('~', process.env.HOME || '');
+      const keyContent = loadPrivateKey(config.keyPath);
+      if (keyContent) {
+        connOpts.privateKey = keyContent;
+      }
     } else if (!config.password) {
       // 未配置 keyPath 且未配置 password，尝试使用默认 SSH 密钥
       const defaultKeys = ['~/.ssh/id_rsa', '~/.ssh/id_ed25519', '~/.ssh/id_ecdsa', '~/.ssh/rsa'];
       for (const key of defaultKeys) {
-        const keyPath = key.replace('~', process.env.HOME || '');
-        if (fs.existsSync(keyPath)) {
-          connOpts.privateKey = keyPath;
+        const keyContent = loadPrivateKey(key);
+        if (keyContent) {
+          connOpts.privateKey = keyContent;
           break;
         }
       }
